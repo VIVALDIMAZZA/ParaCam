@@ -3,320 +3,254 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Ghost Vision SLS - AR</title>
-    
-    <!-- Babylon.js Core & Pointer Events (Wajib untuk Mobile) -->
-    <script src="https://cdn.babylonjs.com/babylon.js"></script>
-    <script src="https://code.jquery.com/pep/0.4.3/pep.js"></script>
-    
+    <title>Spirit Net - Web LiDAR</title>
     <style>
         :root {
-            --sls-green: #00ff00;
-            --sls-dark: #001100;
+            --neon-blue: #00d2ff;
+            --neon-green: #00ff88;
+            --dark-bg: #030508;
+            --red-stop: #ff3333;
         }
         body, html {
             margin: 0; padding: 0; width: 100%; height: 100%;
-            background-color: #000; color: var(--sls-green);
-            font-family: 'Courier New', Courier, monospace;
+            background-color: var(--dark-bg); color: white;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             overflow: hidden; user-select: none;
         }
+
+        /* Video disembunyikan, hanya digunakan sebagai sumber data */
+        #camera-feed { display: none; }
         
-        /* Fallback Kamera Asli HTML (Mengatasi Layar Hitam) */
-        #bg-video {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            object-fit: cover; z-index: 0;
+        /* Canvas Utama untuk merender Point Cloud */
+        #lidar-canvas {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1;
+            background: #000;
         }
 
-        /* Canvas 3D Babylon (Transparan, di atas video) */
-        #renderCanvas {
-            width: 100%; height: 100%; touch-action: none; 
-            position: absolute; top: 0; left: 0; z-index: 1; outline: none;
+        /* UI Overlay - Top Bar */
+        .top-bar {
+            position: absolute; top: 0; left: 0; width: 100%; padding: 40px 20px 15px; 
+            box-sizing: border-box; z-index: 10;
+            display: flex; justify-content: space-between; align-items: center;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0) 100%);
+        }
+        .header-title { display: flex; flex-direction: column; }
+        .title { font-size: 20px; font-weight: 700; margin-bottom: 2px; }
+        .subtitle { font-size: 12px; color: var(--neon-blue); font-weight: 500; }
+        
+        .top-controls { display: flex; gap: 10px; align-items: center; }
+        .icon-btn { 
+            width: 35px; height: 35px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.2);
+            background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center;
+            font-size: 16px; font-weight: bold;
         }
 
-        /* HUD UI (Layer Paling Atas) */
-        #ui-layer {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            z-index: 10; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between;
+        /* UI Overlay - Point Cloud Counter */
+        .point-cloud-stats {
+            position: absolute; top: 100px; left: 20px; right: 20px; z-index: 10;
+            display: flex; justify-content: space-between; font-size: 10px; font-weight: 700;
+            color: rgba(255,255,255,0.6); letter-spacing: 1px;
         }
-        .hud-header {
-            background: rgba(0, 0, 0, 0.7); padding: 10px; font-size: 10px; border-bottom: 1px solid var(--sls-green);
-            text-align: center; pointer-events: auto;
-        }
-        .hud-stats { display: flex; justify-content: space-around; margin-top: 5px; opacity: 0.8; }
-        .center-text {
-            position: absolute; top: 20%; width: 100%; text-align: center; font-size: 24px; font-weight: bold;
-            text-shadow: 0 0 5px var(--sls-green); animation: blink 2s infinite; pointer-events: none;
-        }
-        .hud-footer {
-            background: rgba(0, 0, 0, 0.8); padding: 15px; border-top: 1px solid var(--sls-green);
-            display: flex; justify-content: space-around; align-items: center; pointer-events: auto;
-        }
-        .btn-action {
-            background: rgba(0, 50, 0, 0.5); border: 2px solid var(--sls-green); color: var(--sls-green);
-            padding: 10px 20px; font-family: inherit; font-weight: bold; border-radius: 5px; cursor: pointer;
-        }
-        .btn-action:active { background: var(--sls-green); color: #000; }
-        
-        #minimap {
-            position: absolute; bottom: 85px; right: 10px; width: 80px; height: 80px;
-            border: 1px solid var(--sls-green); background: rgba(0,20,0,0.5); border-radius: 50%; pointer-events: auto;
-        }
+        .point-count { color: white; font-size: 12px; font-variant-numeric: tabular-nums; }
 
-        /* Layar Startup */
-        #startup-screen {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #000;
-            z-index: 999; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 20px; box-sizing: border-box;
+        /* UI Overlay - Bottom Bar */
+        .bottom-bar {
+            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+            width: 90%; max-width: 400px; z-index: 10;
+            display: flex; gap: 15px;
         }
-        #log-box { width: 90%; height: 150px; overflow-y: auto; text-align: left; font-size: 12px; margin-bottom: 20px; border: 1px dashed var(--sls-green); padding: 10px; }
-        
-        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .action-btn {
+            flex: 1; padding: 15px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1);
+            background: rgba(20, 25, 30, 0.8); backdrop-filter: blur(10px);
+            color: white; font-size: 14px; font-weight: 600; text-align: center;
+            display: flex; justify-content: center; align-items: center; gap: 8px; cursor: pointer;
+        }
+        .btn-stop { border-color: rgba(255, 51, 51, 0.3); }
+        .stop-icon { width: 12px; height: 12px; background: var(--red-stop); }
+        .btn-record { border-color: rgba(0, 255, 136, 0.3); }
+        .record-icon { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--neon-green); background: transparent; }
+        .recording .record-icon { background: var(--neon-green); box-shadow: 0 0 10px var(--neon-green); }
+
+        /* Layar Inisialisasi */
+        #startup {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 100;
+            background: var(--dark-bg); display: flex; flex-direction: column; justify-content: center; align-items: center;
+        }
+        .start-btn {
+            background: transparent; border: 2px solid var(--neon-blue); color: var(--neon-blue);
+            padding: 15px 30px; font-size: 16px; border-radius: 8px; font-weight: bold; cursor: pointer;
+            box-shadow: 0 0 15px rgba(0, 210, 255, 0.2);
+        }
     </style>
 </head>
 <body>
 
-    <!-- Fallback Video Asli -->
-    <video id="bg-video" autoplay playsinline muted></video>
+    <!-- Layar Awal -->
+    <div id="startup">
+        <h2 style="color: var(--neon-blue); margin-bottom: 5px;">SPIRIT NET</h2>
+        <p style="font-size: 12px; color: #888; margin-bottom: 30px;">Web-Based LiDAR Simulation</p>
+        <button class="start-btn" onclick="initScanner()">INITIALIZE SCANNER</button>
+    </div>
 
-    <!-- UI Kamera SLS -->
-    <div id="ui-layer" style="display: none;">
-        <div class="hud-header">
-            <div>[ GHOST VISION SLS - GITHUB PAGES ]</div>
-            <div class="hud-stats">
-                <span>ILLc <span id="s-illc">0179</span></span>
-                <span>EXPc <span id="s-expc">0.017</span></span>
-                <span>GPS: <span id="s-gps">WAIT</span></span>
-            </div>
+    <!-- UI Overlay ala Spirit Net -->
+    <div class="top-bar">
+        <div class="icon-btn">≡</div>
+        <div class="header-title">
+            <span class="title">Spirit Net</span>
+            <span class="subtitle">LiDAR Scanner</span>
         </div>
-        <div class="center-text" id="alert-text" style="display:none;">ENTITY DETECTED</div>
-        <canvas id="minimap"></canvas>
-        <div class="hud-footer">
-            <div style="font-size: 10px; text-align: center;">MATRIX<br><br><span style="color:white">ON</span></div>
-            <!-- Tombol AR sekarang lebih informatif -->
-            <button class="btn-action" id="ar-btn" style="display:none;">ENTER AR MODE</button>
-            <div style="font-size: 10px; text-align: center;">RECORD<br><br><div style="width:20px; height:20px; background: red; border-radius:50%; margin: 0 auto;"></div></div>
+        <div class="top-controls">
+            <div class="icon-btn" style="color: var(--neon-green);">●</div>
+            <div class="icon-btn" style="font-size: 10px;">REC</div>
+            <div class="icon-btn">⚙</div>
         </div>
     </div>
 
-    <!-- Canvas Babylon -->
-    <canvas id="renderCanvas" touch-action="none"></canvas>
-
-    <!-- Layar Inisialisasi -->
-    <div id="startup-screen">
-        <h2>[ KREASIOKA SLS SYSTEM ]</h2>
-        <div id="log-box">Menunggu perintah...</div>
-        <button class="btn-action" id="start-btn" onclick="initializeSystem()">AKTIFKAN SENSOR</button>
+    <div class="point-cloud-stats">
+        <span>⚬ POINT CLOUD</span>
+        <span class="point-count" id="counter">0</span>
     </div>
+
+    <div class="bottom-bar">
+        <div class="action-btn btn-stop">
+            <div class="stop-icon"></div> STOP
+        </div>
+        <div class="action-btn btn-record" id="rec-btn">
+            <div class="record-icon"></div> RECORD
+        </div>
+    </div>
+
+    <!-- Video Source & Processing Canvas -->
+    <video id="camera-feed" autoplay playsinline muted></video>
+    <canvas id="lidar-canvas"></canvas>
 
     <script>
-        const canvas = document.getElementById("renderCanvas");
-        const videoElement = document.getElementById("bg-video");
-        const logBox = document.getElementById("log-box");
-        let engine, scene, xrExperience, ghostMesh, minimapCtx;
-        let ghostActive = false;
+        const video = document.getElementById('camera-feed');
+        const canvas = document.getElementById('lidar-canvas');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const counter = document.getElementById('counter');
+        
+        let scanning = false;
+        let animationId;
+        let basePoints = 750000;
 
-        function log(msg) {
-            logBox.innerHTML += `<div>> ${msg}</div>`;
-            logBox.scrollTop = logBox.scrollHeight;
-        }
+        // Offscreen canvas untuk membaca frame video secara efisien
+        const offCanvas = document.createElement('canvas');
+        const offCtx = offCanvas.getContext('2d', { willReadFrequently: true });
 
-        async function initializeSystem() {
-            document.getElementById("start-btn").disabled = true;
-            log("Meminta Akses GPS...");
+        // Memulai Kamera dan Sensor
+        async function initScanner() {
+            document.getElementById('startup').style.display = 'none';
             
-            navigator.geolocation.getCurrentPosition(
-                (pos) => { document.getElementById("s-gps").innerText = `${pos.coords.latitude.toFixed(2)},${pos.coords.longitude.toFixed(2)}`; },
-                (err) => { log(`GPS Info: ${err.message}`); },
-                { enableHighAccuracy: true }
-            );
+            // Minta izin GPS (Sesuai kebutuhan sistem background)
+            navigator.geolocation.getCurrentPosition(()=>{}, ()=>{}, {enableHighAccuracy: true});
 
-            log("Mengaktifkan Kamera (Fallback HTML)...");
             try {
-                // Video playsinline dan muted sangat penting agar otomatis memutar di mobile
-                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-                videoElement.srcObject = stream;
-                log("Kamera Berhasil Aktif!");
+                // Aktifkan kamera belakang
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 } } 
+                });
+                video.srcObject = stream;
+                
+                video.onloadedmetadata = () => {
+                    video.play();
+                    resizeCanvas();
+                    scanning = true;
+                    processLiDAREffect();
+                };
             } catch (err) {
-                log(`Kamera Gagal: ${err.message}. Pastikan izin diberikan di pengaturan browser.`);
+                alert("Gagal mengakses kamera: " + err.message);
             }
-
-            setTimeout(initBabylon, 1500);
         }
 
-        async function initBabylon() {
-            log("Memuat Mesin 3D Babylon...");
-            engine = new BABYLON.Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true, alpha: true });
-            scene = new BABYLON.Scene(engine);
+        function resizeCanvas() {
+            // Sesuaikan ukuran resolusi layar perangkat
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
             
-            // KUNCI UTAMA: Membuat background canvas benar-benar transparan agar video HTML di bawahnya terlihat
-            scene.clearColor = new BABYLON.Color4(0, 0, 0, 0); 
-
-            const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
-            light.intensity = 1.0;
-
-            const camera = new BABYLON.FreeCamera("camera1", new BABYLON.Vector3(0, 1.5, -3), scene);
-            camera.setTarget(BABYLON.Vector3.Zero());
-
-            createProceduralGhost();
-            setupMinimap();
-
-            document.getElementById("startup-screen").style.display = "none";
-            document.getElementById("ui-layer").style.display = "flex";
-
-            engine.runRenderLoop(() => {
-                scene.render();
-                updateHUD();
-                updateMinimap();
-            });
-            window.addEventListener("resize", () => { engine.resize(); });
-
-            setupWebXR();
+            // Set ukuran offscreen canvas lebih kecil untuk performa pemrosesan piksel
+            // Semakin kecil resolusinya, semakin cepat, namun titik terlihat lebih besar
+            offCanvas.width = window.innerWidth / 3; 
+            offCanvas.height = window.innerHeight / 3;
         }
 
-        function createProceduralGhost() {
-            // Membuat bentuk humanoid
-            const body = BABYLON.MeshBuilder.CreateCapsule("body", {height: 1.5, radius: 0.3}, scene);
-            const head = BABYLON.MeshBuilder.CreateSphere("head", {diameter: 0.4}, scene);
-            head.position.y = 1.0;
-            const arm = BABYLON.MeshBuilder.CreateCylinder("arm", {height: 0.8, diameter: 0.1}, scene);
-            arm.position.x = 0.4; arm.position.y = 0.4; arm.rotation.z = Math.PI / 4;
+        window.addEventListener('resize', resizeCanvas);
+
+        // Algoritma Utama: Mengubah Kamera Asli menjadi Point Cloud
+        function processLiDAREffect() {
+            if (!scanning) return;
+
+            const w = offCanvas.width;
+            const h = offCanvas.height;
+            const scaleX = canvas.width / w;
+            const scaleY = canvas.height / h;
+
+            // Gambar frame kamera ke canvas tersembunyi
+            offCtx.drawImage(video, 0, 0, w, h);
             
-            ghostMesh = BABYLON.Mesh.MergeMeshes([body, head, arm], true, true, undefined, false, true);
+            // Ambil data piksel
+            const imgData = offCtx.getImageData(0, 0, w, h);
+            const data = imgData.data;
+
+            // Bersihkan kanvas utama (Latar Hitam)
+            ctx.fillStyle = 'rgba(2, 4, 10, 0.9)'; // Sedikit transparan agar ada efek 'ghosting'
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            let dotsRendered = 0;
+
+            // Loop melalui piksel (Lompat setiap 2 piksel untuk membuat jarak/titik)
+            const step = 2; 
             
-            const slsMaterial = new BABYLON.StandardMaterial("slsMat", scene);
-            slsMaterial.emissiveColor = new BABYLON.Color3(0.0, 1.0, 0.0); // Hijau SLS
-            slsMaterial.wireframe = true;
-            slsMaterial.alpha = 0.9;
-            slsMaterial.disableLighting = true; 
-            
-            ghostMesh.material = slsMaterial;
-            ghostMesh.position = new BABYLON.Vector3(0, 0, 3); // Posisi default di depan kamera
-            ghostMesh.isVisible = false;
-        }
+            for (let y = 0; y < h; y += step) {
+                for (let x = 0; x < w; x += step) {
+                    const i = (y * w + x) * 4;
+                    const r = data[i];
+                    const g = data[i + 1];
+                    const b = data[i + 2];
 
-        async function setupWebXR() {
-            try {
-                // Konfigurasi WebXR yang lebih "memaafkan" agar tidak memicu ikon ERROR
-                xrExperience = await scene.createDefaultXRExperienceAsync({
-                    uiOptions: { 
-                        sessionMode: 'immersive-ar',
-                        referenceSpaceType: 'unbounded' // Lebih kompatibel dari local-floor
-                    },
-                    optionalFeatures: true
-                });
+                    // Hitung tingkat kecerahan piksel
+                    const brightness = (r + g + b) / 3;
 
-                const fm = xrExperience.baseExperience.featuresManager;
-                
-                // Mendaftarkan UI Layer kita agar tetap muncul DI DALAM mode AR WebXR
-                try {
-                    fm.enableFeature(BABYLON.WebXRFeatureName.DOM_OVERLAY, "latest", {
-                        element: "#ui-layer"
-                    });
-                } catch(e) { console.warn("DOM Overlay tidak didukung"); }
+                    // Logika LiDAR palsu: Hanya render area yang memiliki kontras/cahaya
+                    if (brightness > 40) {
+                        // Tambahkan sedikit noise posisi agar terlihat 3D/acak
+                        const noiseX = (Math.random() - 0.5) * 2;
+                        const noiseY = (Math.random() - 0.5) * 2;
+                        
+                        const drawX = (x * scaleX) + noiseX;
+                        const drawY = (y * scaleY) + noiseY;
 
-                // Hit Test (Opsional, dibungkus try-catch agar tidak crash jika HP tidak mendukung)
-                let hitTest;
-                try {
-                    hitTest = fm.enableFeature(BABYLON.WebXRHitTest, 'latest');
-                } catch(e) { console.warn("Hit Test tidak didukung"); }
+                        // Gradasi warna ala Spirit Net (Hijau ke Biru tergantung kontras)
+                        if (brightness > 120) {
+                            ctx.fillStyle = `rgba(0, 255, 136, ${Math.random() * 0.8 + 0.2})`; // Neon Green
+                        } else if (brightness > 80) {
+                            ctx.fillStyle = `rgba(0, 210, 255, ${Math.random() * 0.7 + 0.1})`; // Neon Blue
+                        } else {
+                            ctx.fillStyle = `rgba(100, 150, 255, ${Math.random() * 0.5})`; // Faded Blue/Purple
+                        }
 
-                let lastHitTest = null;
-                if (hitTest) {
-                    hitTest.onHitTestResultObservable.add((results) => {
-                        if (results.length > 0) { lastHitTest = results[0]; }
-                    });
-                }
-
-                // Logika Spawning Hantu
-                setInterval(() => {
-                    // Cek apakah sedang dalam mode AR atau mode Fallback HTML
-                    const inXR = xrExperience.baseExperience.state === BABYLON.WebXRState.IN_XR;
-                    spawnGhost(lastHitTest, inXR);
-                }, 6000); // Evaluasi tiap 6 detik
-
-                // Atur visibilitas Video HTML vs Kamera WebXR Native
-                xrExperience.baseExperience.onStateChangedObservable.add((state) => {
-                    if (state === BABYLON.WebXRState.IN_XR) {
-                        videoElement.style.display = 'none'; // Sembunyikan fallback saat AR Core jalan
-                    } else if (state === BABYLON.WebXRState.NOT_IN_XR) {
-                        videoElement.style.display = 'block'; // Munculkan fallback jika keluar AR
+                        // Ukuran titik acak
+                        const dotSize = Math.random() > 0.9 ? 2 : 1;
+                        
+                        ctx.fillRect(drawX, drawY, dotSize, dotSize);
+                        dotsRendered++;
                     }
-                });
-
-            } catch (e) {
-                console.warn("WebXR Gagal Diinisialisasi. Tetap menggunakan mode Fallback Kamera HTML.", e);
-                // Jika WebXR gagal total, kita tetap jalankan fungsi spawnGhost dengan sistem fallback
-                setInterval(() => { spawnGhost(null, false); }, 6000);
-            }
-        }
-
-        function spawnGhost(hitTestResult, inXR) {
-            if (!ghostMesh || ghostActive) return;
-            
-            // Logika kemunculan acak (30% kemungkinan muncul tiap dievaluasi)
-            if (Math.random() > 0.7) {
-                ghostActive = true;
-                ghostMesh.isVisible = true;
-                document.getElementById("alert-text").style.display = "block";
-
-                if (inXR && hitTestResult) {
-                    // Mode AR Canggih: Taruh di lantai/permukaan
-                    hitTestResult.transformationMatrix.decompose(undefined, undefined, ghostMesh.position);
-                    ghostMesh.position.y += 0.8; 
-                    ghostMesh.lookAt(xrExperience.baseExperience.camera.position);
-                } else {
-                    // Mode Fallback (Kamera HTML): Taruh melayang acak di depan kamera
-                    let rx = (Math.random() - 0.5) * 4;
-                    let rz = 3 + Math.random() * 4; // Jarak 3-7 meter di depan
-                    ghostMesh.position = new BABYLON.Vector3(rx, 0, rz);
                 }
-
-                // Hantu hilang setelah 3.5 detik
-                setTimeout(() => {
-                    ghostMesh.isVisible = false;
-                    ghostActive = false;
-                    document.getElementById("alert-text").style.display = "none";
-                }, 3500);
             }
+
+            // Update UI Counter agar terlihat seperti sistem LiDAR sungguhan
+            // Mengombinasikan angka acak statis besar dengan jumlah titik aktual yang dirender
+            basePoints += (Math.random() - 0.5) * 1000;
+            const finalCount = Math.floor(basePoints + (dotsRendered * 15));
+            counter.innerText = finalCount.toLocaleString('en-US');
+
+            animationId = requestAnimationFrame(processLiDAREffect);
         }
 
-        function setupMinimap() {
-            const mmCanvas = document.getElementById("minimap");
-            mmCanvas.width = 80; mmCanvas.height = 80;
-            minimapCtx = mmCanvas.getContext("2d");
-        }
-
-        function updateMinimap() {
-            if (!minimapCtx) return;
-            minimapCtx.clearRect(0, 0, 80, 80);
-            
-            // Titik Pusat (Kamera)
-            minimapCtx.fillStyle = "#fff";
-            minimapCtx.beginPath();
-            minimapCtx.arc(40, 40, 3, 0, Math.PI * 2);
-            minimapCtx.fill();
-
-            // Titik Hantu
-            if (ghostActive && ghostMesh) {
-                let camPos = {x: 0, z: 0};
-                if (xrExperience && xrExperience.baseExperience.state === BABYLON.WebXRState.IN_XR) {
-                    camPos = xrExperience.baseExperience.camera.position;
-                }
-                const relX = (ghostMesh.position.x - camPos.x) * 8;
-                const relZ = (ghostMesh.position.z - camPos.z) * 8;
-                
-                minimapCtx.fillStyle = "#0f0";
-                minimapCtx.beginPath();
-                minimapCtx.arc(40 + relX, 40 - relZ, 4, 0, Math.PI * 2);
-                minimapCtx.fill();
-            }
-        }
-
-        function updateHUD() {
-            if (Math.random() > 0.8) {
-                document.getElementById("s-illc").innerText = Math.floor(Math.random() * 300).toString().padStart(4, '0');
-                document.getElementById("s-expc").innerText = (Math.random() * 0.1).toFixed(3);
-            }
-        }
+        // Efek Tombol Record
+        document.getElementById('rec-btn').addEventListener('click', function() {
+            this.classList.toggle('recording');
+        });
     </script>
 </body>
 </html>
