@@ -3,254 +3,259 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Spirit Net - Web LiDAR</title>
+    <title>Anomaly Scanner - True AR</title>
+    
+    <!-- Babylon.js Core -->
+    <script src="https://cdn.babylonjs.com/babylon.js"></script>
+    <script src="https://code.jquery.com/pep/0.4.3/pep.js"></script>
+    
     <style>
         :root {
-            --neon-blue: #00d2ff;
-            --neon-green: #00ff88;
-            --dark-bg: #030508;
-            --red-stop: #ff3333;
+            --ui-color: #00d2ff;
+            --warn-color: #ff3366;
         }
         body, html {
             margin: 0; padding: 0; width: 100%; height: 100%;
-            background-color: var(--dark-bg); color: white;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            overflow: hidden; user-select: none;
+            background-color: #000; color: var(--ui-color);
+            font-family: 'Courier New', Courier, monospace;
+            overflow: hidden; touch-action: none;
         }
 
-        /* Video disembunyikan, hanya digunakan sebagai sumber data */
-        #camera-feed { display: none; }
+        #renderCanvas {
+            width: 100%; height: 100%; touch-action: none; 
+            position: absolute; top: 0; left: 0; z-index: 1; outline: none;
+        }
+
+        /* HUD Overlay yang tetap muncul di AR (DOM Overlay) */
+        #hud-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 10; pointer-events: none; display: flex; flex-direction: column;
+            justify-content: space-between; padding: 20px; box-sizing: border-box;
+        }
+
+        .hud-header {
+            border-left: 3px solid var(--ui-color); padding-left: 10px;
+            background: linear-gradient(90deg, rgba(0,210,255,0.2) 0%, transparent 100%);
+        }
+        .title { font-weight: bold; font-size: 16px; letter-spacing: 2px; }
+        .status { font-size: 12px; margin-top: 5px; color: #fff; }
         
-        /* Canvas Utama untuk merender Point Cloud */
-        #lidar-canvas {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1;
-            background: #000;
+        .scan-warning {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: var(--warn-color); font-weight: bold; font-size: 18px; text-align: center;
+            text-shadow: 0 0 10px var(--warn-color); display: none;
+            animation: pulse 1s infinite;
         }
 
-        /* UI Overlay - Top Bar */
-        .top-bar {
-            position: absolute; top: 0; left: 0; width: 100%; padding: 40px 20px 15px; 
-            box-sizing: border-box; z-index: 10;
-            display: flex; justify-content: space-between; align-items: center;
-            background: linear-gradient(to bottom, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0) 100%);
-        }
-        .header-title { display: flex; flex-direction: column; }
-        .title { font-size: 20px; font-weight: 700; margin-bottom: 2px; }
-        .subtitle { font-size: 12px; color: var(--neon-blue); font-weight: 500; }
+        .hud-footer { text-align: center; pointer-events: auto; }
         
-        .top-controls { display: flex; gap: 10px; align-items: center; }
-        .icon-btn { 
-            width: 35px; height: 35px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.2);
-            background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center;
-            font-size: 16px; font-weight: bold;
+        .btn-ar {
+            background: rgba(0, 20, 40, 0.8); border: 1px solid var(--ui-color); color: var(--ui-color);
+            padding: 15px 30px; font-size: 16px; font-weight: bold; border-radius: 8px; cursor: pointer;
+            box-shadow: 0 0 15px rgba(0, 210, 255, 0.3); text-transform: uppercase;
         }
+        .btn-ar:active { background: var(--ui-color); color: #000; }
 
-        /* UI Overlay - Point Cloud Counter */
-        .point-cloud-stats {
-            position: absolute; top: 100px; left: 20px; right: 20px; z-index: 10;
-            display: flex; justify-content: space-between; font-size: 10px; font-weight: 700;
-            color: rgba(255,255,255,0.6); letter-spacing: 1px;
-        }
-        .point-count { color: white; font-size: 12px; font-variant-numeric: tabular-nums; }
-
-        /* UI Overlay - Bottom Bar */
-        .bottom-bar {
-            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
-            width: 90%; max-width: 400px; z-index: 10;
-            display: flex; gap: 15px;
-        }
-        .action-btn {
-            flex: 1; padding: 15px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1);
-            background: rgba(20, 25, 30, 0.8); backdrop-filter: blur(10px);
-            color: white; font-size: 14px; font-weight: 600; text-align: center;
-            display: flex; justify-content: center; align-items: center; gap: 8px; cursor: pointer;
-        }
-        .btn-stop { border-color: rgba(255, 51, 51, 0.3); }
-        .stop-icon { width: 12px; height: 12px; background: var(--red-stop); }
-        .btn-record { border-color: rgba(0, 255, 136, 0.3); }
-        .record-icon { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--neon-green); background: transparent; }
-        .recording .record-icon { background: var(--neon-green); box-shadow: 0 0 10px var(--neon-green); }
-
-        /* Layar Inisialisasi */
+        /* Layar Startup */
         #startup {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 100;
-            background: var(--dark-bg); display: flex; flex-direction: column; justify-content: center; align-items: center;
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: #050505; z-index: 100; display: flex; flex-direction: column;
+            justify-content: center; align-items: center; text-align: center; padding: 20px;
         }
-        .start-btn {
-            background: transparent; border: 2px solid var(--neon-blue); color: var(--neon-blue);
-            padding: 15px 30px; font-size: 16px; border-radius: 8px; font-weight: bold; cursor: pointer;
-            box-shadow: 0 0 15px rgba(0, 210, 255, 0.2);
-        }
+        
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
     </style>
 </head>
 <body>
 
-    <!-- Layar Awal -->
     <div id="startup">
-        <h2 style="color: var(--neon-blue); margin-bottom: 5px;">SPIRIT NET</h2>
-        <p style="font-size: 12px; color: #888; margin-bottom: 30px;">Web-Based LiDAR Simulation</p>
-        <button class="start-btn" onclick="initScanner()">INITIALIZE SCANNER</button>
+        <h2 style="color: var(--ui-color);">[ SPATIAL ANOMALY DETECTOR ]</h2>
+        <p style="font-size: 12px; color: #888; max-width: 300px;">Aplikasi ini membutuhkan akses Kamera dan Sensor Ruang (WebXR Hit-Test). Gerakkan HP untuk memindai lantai/ruangan setelah AR aktif.</p>
+        <button class="btn-ar" onclick="initEngine()" style="margin-top: 20px;">INITIATE SENSORS</button>
     </div>
 
-    <!-- UI Overlay ala Spirit Net -->
-    <div class="top-bar">
-        <div class="icon-btn">≡</div>
-        <div class="header-title">
-            <span class="title">Spirit Net</span>
-            <span class="subtitle">LiDAR Scanner</span>
+    <!-- UI LAYER (Akan di-inject ke dalam WebXR DOM Overlay) -->
+    <div id="hud-layer" style="display: none;">
+        <div class="hud-header">
+            <div class="title">SPATIAL SCANNER</div>
+            <div class="status" id="sys-status">Menunggu AR...</div>
         </div>
-        <div class="top-controls">
-            <div class="icon-btn" style="color: var(--neon-green);">●</div>
-            <div class="icon-btn" style="font-size: 10px;">REC</div>
-            <div class="icon-btn">⚙</div>
-        </div>
-    </div>
-
-    <div class="point-cloud-stats">
-        <span>⚬ POINT CLOUD</span>
-        <span class="point-count" id="counter">0</span>
-    </div>
-
-    <div class="bottom-bar">
-        <div class="action-btn btn-stop">
-            <div class="stop-icon"></div> STOP
-        </div>
-        <div class="action-btn btn-record" id="rec-btn">
-            <div class="record-icon"></div> RECORD
+        
+        <div class="scan-warning" id="warning-text">UNKNOWN ANOMALY DETECTED</div>
+        
+        <div class="hud-footer">
+            <button class="btn-ar" id="btn-enter-ar" style="display:none;">ENTER AR MODE</button>
         </div>
     </div>
 
-    <!-- Video Source & Processing Canvas -->
-    <video id="camera-feed" autoplay playsinline muted></video>
-    <canvas id="lidar-canvas"></canvas>
+    <canvas id="renderCanvas" touch-action="none"></canvas>
 
     <script>
-        const video = document.getElementById('camera-feed');
-        const canvas = document.getElementById('lidar-canvas');
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        const counter = document.getElementById('counter');
-        
-        let scanning = false;
-        let animationId;
-        let basePoints = 750000;
+        const canvas = document.getElementById("renderCanvas");
+        let engine, scene, xrExperience, anomalyEntity, marker;
+        let anomalyActive = false;
 
-        // Offscreen canvas untuk membaca frame video secara efisien
-        const offCanvas = document.createElement('canvas');
-        const offCtx = offCanvas.getContext('2d', { willReadFrequently: true });
-
-        // Memulai Kamera dan Sensor
-        async function initScanner() {
-            document.getElementById('startup').style.display = 'none';
+        async function initEngine() {
+            document.getElementById("startup").style.display = "none";
+            document.getElementById("hud-layer").style.display = "flex";
             
-            // Minta izin GPS (Sesuai kebutuhan sistem background)
-            navigator.geolocation.getCurrentPosition(()=>{}, ()=>{}, {enableHighAccuracy: true});
+            engine = new BABYLON.Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true, alpha: true });
+            scene = new BABYLON.Scene(engine);
+            scene.clearColor = new BABYLON.Color4(0, 0, 0, 0); // Transparan untuk AR
 
-            try {
-                // Aktifkan kamera belakang
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 } } 
-                });
-                video.srcObject = stream;
-                
-                video.onloadedmetadata = () => {
-                    video.play();
-                    resizeCanvas();
-                    scanning = true;
-                    processLiDAREffect();
-                };
-            } catch (err) {
-                alert("Gagal mengakses kamera: " + err.message);
-            }
+            const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
+            light.intensity = 1.2;
+
+            // Kamera standar sebelum masuk AR
+            const camera = new BABYLON.FreeCamera("camera1", new BABYLON.Vector3(0, 1.5, -3), scene);
+            camera.setTarget(BABYLON.Vector3.Zero());
+
+            createScannerMarker(); // Membuat target pemindai lantai
+            createWeirdAnomaly();  // Membuat entitas aneh
+
+            engine.runRenderLoop(() => { scene.render(); });
+            window.addEventListener("resize", () => { engine.resize(); });
+
+            setupAR();
         }
 
-        function resizeCanvas() {
-            // Sesuaikan ukuran resolusi layar perangkat
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
+        // 1. MEMBUAT MARKER PEMINDAI RUANGAN
+        function createScannerMarker() {
+            // Ini adalah lingkaran biru yang akan menempel pada lantai/dinding fisik
+            marker = BABYLON.MeshBuilder.CreateTorus("marker", { diameter: 0.5, thickness: 0.02 }, scene);
+            marker.rotation.x = Math.PI / 2; // Rebahkan di lantai
             
-            // Set ukuran offscreen canvas lebih kecil untuk performa pemrosesan piksel
-            // Semakin kecil resolusinya, semakin cepat, namun titik terlihat lebih besar
-            offCanvas.width = window.innerWidth / 3; 
-            offCanvas.height = window.innerHeight / 3;
+            const markerMat = new BABYLON.StandardMaterial("markerMat", scene);
+            markerMat.emissiveColor = new BABYLON.Color3(0, 0.8, 1);
+            markerMat.alpha = 0.6;
+            markerMat.disableLighting = true;
+            marker.material = markerMat;
+            
+            marker.isVisible = false; // Sembunyikan sampai lantai terdeteksi
         }
 
-        window.addEventListener('resize', resizeCanvas);
+        // 2. MEMBUAT ENTITAS ANEH (Non-Humanoid, Abstrak)
+        function createWeirdAnomaly() {
+            // Kita bungkus dalam satu TransformNode agar mudah dipindah-pindah
+            anomalyEntity = new BABYLON.TransformNode("anomalyRoot");
 
-        // Algoritma Utama: Mengubah Kamera Asli menjadi Point Cloud
-        function processLiDAREffect() {
-            if (!scanning) return;
+            // Inti Entitas: Bola energi berwarna merah/ungu gelap
+            const core = BABYLON.MeshBuilder.CreateIcoSphere("core", { radius: 0.2, subdivisions: 3 }, scene);
+            const coreMat = new BABYLON.StandardMaterial("coreMat", scene);
+            coreMat.emissiveColor = new BABYLON.Color3(1, 0, 0.5);
+            coreMat.wireframe = true;
+            core.material = coreMat;
+            core.parent = anomalyEntity;
 
-            const w = offCanvas.width;
-            const h = offCanvas.height;
-            const scaleX = canvas.width / w;
-            const scaleY = canvas.height / h;
+            // Material untuk cincin luar
+            const ringMat = new BABYLON.StandardMaterial("ringMat", scene);
+            ringMat.emissiveColor = new BABYLON.Color3(0.5, 0, 1);
+            ringMat.alpha = 0.8;
+            ringMat.wireframe = true;
 
-            // Gambar frame kamera ke canvas tersembunyi
-            offCtx.drawImage(video, 0, 0, w, h);
+            // Cincin-cincin dimensi yang melayang (Torus berpotongan)
+            const ring1 = BABYLON.MeshBuilder.CreateTorus("r1", { diameter: 0.6, thickness: 0.03 }, scene);
+            const ring2 = BABYLON.MeshBuilder.CreateTorus("r2", { diameter: 0.8, thickness: 0.01 }, scene);
+            const ring3 = BABYLON.MeshBuilder.CreateTorus("r3", { diameter: 1.0, thickness: 0.05 }, scene);
             
-            // Ambil data piksel
-            const imgData = offCtx.getImageData(0, 0, w, h);
-            const data = imgData.data;
+            ring1.material = ringMat; ring2.material = ringMat; ring3.material = ringMat;
+            ring1.parent = anomalyEntity; ring2.parent = anomalyEntity; ring3.parent = anomalyEntity;
 
-            // Bersihkan kanvas utama (Latar Hitam)
-            ctx.fillStyle = 'rgba(2, 4, 10, 0.9)'; // Sedikit transparan agar ada efek 'ghosting'
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            let dotsRendered = 0;
-
-            // Loop melalui piksel (Lompat setiap 2 piksel untuk membuat jarak/titik)
-            const step = 2; 
+            anomalyEntity.position.y = -100; // Sembunyikan jauh di bawah tanah sementara
             
-            for (let y = 0; y < h; y += step) {
-                for (let x = 0; x < w; x += step) {
-                    const i = (y * w + x) * 4;
-                    const r = data[i];
-                    const g = data[i + 1];
-                    const b = data[i + 2];
-
-                    // Hitung tingkat kecerahan piksel
-                    const brightness = (r + g + b) / 3;
-
-                    // Logika LiDAR palsu: Hanya render area yang memiliki kontras/cahaya
-                    if (brightness > 40) {
-                        // Tambahkan sedikit noise posisi agar terlihat 3D/acak
-                        const noiseX = (Math.random() - 0.5) * 2;
-                        const noiseY = (Math.random() - 0.5) * 2;
-                        
-                        const drawX = (x * scaleX) + noiseX;
-                        const drawY = (y * scaleY) + noiseY;
-
-                        // Gradasi warna ala Spirit Net (Hijau ke Biru tergantung kontras)
-                        if (brightness > 120) {
-                            ctx.fillStyle = `rgba(0, 255, 136, ${Math.random() * 0.8 + 0.2})`; // Neon Green
-                        } else if (brightness > 80) {
-                            ctx.fillStyle = `rgba(0, 210, 255, ${Math.random() * 0.7 + 0.1})`; // Neon Blue
-                        } else {
-                            ctx.fillStyle = `rgba(100, 150, 255, ${Math.random() * 0.5})`; // Faded Blue/Purple
-                        }
-
-                        // Ukuran titik acak
-                        const dotSize = Math.random() > 0.9 ? 2 : 1;
-                        
-                        ctx.fillRect(drawX, drawY, dotSize, dotSize);
-                        dotsRendered++;
-                    }
+            // Animasi: Membuat cincin berputar dengan sumbu dan kecepatan aneh setiap frame rendering
+            scene.onBeforeRenderObservable.add(() => {
+                if(anomalyActive) {
+                    core.rotation.y += 0.05;
+                    ring1.rotation.x += 0.02; ring1.rotation.y += 0.03;
+                    ring2.rotation.y -= 0.04; ring2.rotation.z += 0.01;
+                    ring3.rotation.x -= 0.01; ring3.rotation.z -= 0.03;
+                    
+                    // Efek denyut ukuran pada inti
+                    let scale = 1 + Math.sin(Date.now() * 0.005) * 0.2;
+                    core.scaling = new BABYLON.Vector3(scale, scale, scale);
                 }
-            }
-
-            // Update UI Counter agar terlihat seperti sistem LiDAR sungguhan
-            // Mengombinasikan angka acak statis besar dengan jumlah titik aktual yang dirender
-            basePoints += (Math.random() - 0.5) * 1000;
-            const finalCount = Math.floor(basePoints + (dotsRendered * 15));
-            counter.innerText = finalCount.toLocaleString('en-US');
-
-            animationId = requestAnimationFrame(processLiDAREffect);
+            });
         }
 
-        // Efek Tombol Record
-        document.getElementById('rec-btn').addEventListener('click', function() {
-            this.classList.toggle('recording');
-        });
+        // 3. SISTEM AR (Pemetaan Ruang)
+        async function setupAR() {
+            try {
+                // Konfigurasi WebXR Khusus untuk Mendeteksi Ruang (Hit-Test)
+                xrExperience = await scene.createDefaultXRExperienceAsync({
+                    uiOptions: { sessionMode: 'immersive-ar', referenceSpaceType: 'local-floor' },
+                    optionalFeatures: true
+                });
+
+                const fm = xrExperience.baseExperience.featuresManager;
+                
+                // Aktifkan Hit Test (Memancarkan sinar virtual dari kamera ke dunia nyata)
+                const hitTest = fm.enableFeature(BABYLON.WebXRHitTest, 'latest');
+                
+                // Aktifkan UI Overlay agar HTML HUD kita tidak tertutup oleh AR mode
+                try {
+                    fm.enableFeature(BABYLON.WebXRFeatureName.DOM_OVERLAY, "latest", { element: "#hud-layer" });
+                } catch(e) {}
+
+                document.getElementById("btn-enter-ar").style.display = "inline-block";
+                document.getElementById("btn-enter-ar").onclick = async () => {
+                    await xrExperience.baseExperience.enterXRAsync('immersive-ar', 'local-floor');
+                };
+
+                // Deteksi Perubahan Status AR
+                xrExperience.baseExperience.onStateChangedObservable.add((state) => {
+                    if (state === BABYLON.WebXRState.IN_XR) {
+                        document.getElementById("btn-enter-ar").style.display = "none";
+                        document.getElementById("sys-status").innerText = "STATUS: MENGANALISIS RUANGAN. Gerakkan kamera.";
+                    }
+                });
+
+                let lastHitPosition = null;
+
+                // Logika Pemetaan: Saat sensor HP menemukan permukaan (lantai/meja)
+                hitTest.onHitTestResultObservable.add((results) => {
+                    if (results.length > 0) {
+                        marker.isVisible = true;
+                        // Tempelkan Marker (lingkaran biru) ke permukaan fisik
+                        results[0].transformationMatrix.decompose(undefined, marker.rotationQuaternion, marker.position);
+                        lastHitPosition = marker.position.clone();
+                        document.getElementById("sys-status").innerText = "STATUS: PERMUKAAN TERDETEKSI";
+                    } else {
+                        marker.isVisible = false;
+                        document.getElementById("sys-status").innerText = "STATUS: MENCARI PERMUKAAN...";
+                    }
+                });
+
+                // Sistem Kemunculan Acak Entitas Aneh (Manifestation Logic)
+                setInterval(() => {
+                    const inXR = xrExperience.baseExperience.state === BABYLON.WebXRState.IN_XR;
+                    
+                    // Jika sedang di AR, marker menemukan lantai, dan tidak ada entitas aktif (30% peluang muncul)
+                    if (inXR && marker.isVisible && lastHitPosition && !anomalyActive && Math.random() > 0.7) {
+                        spawnAnomaly(lastHitPosition);
+                    }
+                }, 4000);
+
+            } catch (e) {
+                alert("Perangkat atau Browser ini tidak mendukung WebXR ARCore. Pastikan menggunakan Chrome Android dan link HTTPS (GitHub Pages).");
+            }
+        }
+
+        function spawnAnomaly(position) {
+            anomalyActive = true;
+            
+            // Pindahkan entitas ke lokasi fisik (lantai/meja) yang terdeteksi
+            anomalyEntity.position = new BABYLON.Vector3(position.x, position.y + 0.5, position.z); // Muncul 0.5 meter di atas lantai
+            
+            document.getElementById("warning-text").style.display = "block";
+
+            // Hilangkan secara gaib setelah beberapa detik
+            setTimeout(() => {
+                anomalyEntity.position.y = -100; // Sembunyikan lagi
+                anomalyActive = false;
+                document.getElementById("warning-text").style.display = "none";
+            }, 6000);
+        }
     </script>
 </body>
 </html>
