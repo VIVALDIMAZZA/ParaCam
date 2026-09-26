@@ -5,8 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Ghost Vision SLS - AR</title>
     
-    <!-- Babylon.js Core via CDN -->
+    <!-- Babylon.js Core & Pointer Events (Wajib untuk Mobile) -->
     <script src="https://cdn.babylonjs.com/babylon.js"></script>
+    <script src="https://code.jquery.com/pep/0.4.3/pep.js"></script>
     
     <style>
         :root {
@@ -19,42 +20,49 @@
             font-family: 'Courier New', Courier, monospace;
             overflow: hidden; user-select: none;
         }
-        /* Canvas untuk 3D (Layer Bawah) */
-        #renderCanvas {
-            width: 100%; height: 100%; touch-action: none; position: absolute; top: 0; left: 0; z-index: 1;
+        
+        /* Fallback Kamera Asli HTML (Mengatasi Layar Hitam) */
+        #bg-video {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            object-fit: cover; z-index: 0;
         }
-        /* HUD UI (Layer Atas) mirip referensi gambar */
+
+        /* Canvas 3D Babylon (Transparan, di atas video) */
+        #renderCanvas {
+            width: 100%; height: 100%; touch-action: none; 
+            position: absolute; top: 0; left: 0; z-index: 1; outline: none;
+        }
+
+        /* HUD UI (Layer Paling Atas) */
         #ui-layer {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             z-index: 10; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between;
         }
         .hud-header {
             background: rgba(0, 0, 0, 0.7); padding: 10px; font-size: 10px; border-bottom: 1px solid var(--sls-green);
-            text-align: center;
+            text-align: center; pointer-events: auto;
         }
-        .hud-stats {
-            display: flex; justify-content: space-around; margin-top: 5px; opacity: 0.8;
-        }
+        .hud-stats { display: flex; justify-content: space-around; margin-top: 5px; opacity: 0.8; }
         .center-text {
             position: absolute; top: 20%; width: 100%; text-align: center; font-size: 24px; font-weight: bold;
-            text-shadow: 0 0 5px var(--sls-green); animation: blink 2s infinite;
+            text-shadow: 0 0 5px var(--sls-green); animation: blink 2s infinite; pointer-events: none;
         }
         .hud-footer {
             background: rgba(0, 0, 0, 0.8); padding: 15px; border-top: 1px solid var(--sls-green);
             display: flex; justify-content: space-around; align-items: center; pointer-events: auto;
         }
         .btn-action {
-            background: transparent; border: 2px solid var(--sls-green); color: var(--sls-green);
+            background: rgba(0, 50, 0, 0.5); border: 2px solid var(--sls-green); color: var(--sls-green);
             padding: 10px 20px; font-family: inherit; font-weight: bold; border-radius: 5px; cursor: pointer;
         }
         .btn-action:active { background: var(--sls-green); color: #000; }
         
         #minimap {
-            position: absolute; bottom: 80px; right: 10px; width: 100px; height: 100px;
-            border: 1px solid var(--sls-green); background: rgba(0,20,0,0.5); border-radius: 50%;
+            position: absolute; bottom: 85px; right: 10px; width: 80px; height: 80px;
+            border: 1px solid var(--sls-green); background: rgba(0,20,0,0.5); border-radius: 50%; pointer-events: auto;
         }
 
-        /* Layar Izin / Startup */
+        /* Layar Startup */
         #startup-screen {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #000;
             z-index: 999; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 20px; box-sizing: border-box;
@@ -66,38 +74,42 @@
 </head>
 <body>
 
-    <!-- Layar Inisialisasi & Izin -->
-    <div id="startup-screen">
-        <h2>[ GHOST VISION SLS SYSTEM ]</h2>
-        <div id="log-box">Menunggu inisialisasi...</div>
-        <button class="btn-action" id="start-btn" onclick="initializeSystem()">REQUEST PERMISSIONS & START</button>
-        <p style="font-size: 10px; margin-top: 20px; color: #888;">Catatan: Aplikasi membutuhkan HTTPS untuk Kamera & AR.</p>
-    </div>
+    <!-- Fallback Video Asli -->
+    <video id="bg-video" autoplay playsinline muted></video>
 
     <!-- UI Kamera SLS -->
     <div id="ui-layer" style="display: none;">
         <div class="hud-header">
-            <div>[ GHOST VISION SLS ]</div>
+            <div>[ GHOST VISION SLS - GITHUB PAGES ]</div>
             <div class="hud-stats">
                 <span>ILLc <span id="s-illc">0179</span></span>
                 <span>EXPc <span id="s-expc">0.017</span></span>
-                <span>ISOc <span id="s-isoc">5514</span></span>
                 <span>GPS: <span id="s-gps">WAIT</span></span>
             </div>
         </div>
-        <div class="center-text" id="alert-text" style="display:none;">What is that ???</div>
+        <div class="center-text" id="alert-text" style="display:none;">ENTITY DETECTED</div>
         <canvas id="minimap"></canvas>
         <div class="hud-footer">
             <div style="font-size: 10px; text-align: center;">MATRIX<br><br><span style="color:white">ON</span></div>
-            <button class="btn-action" id="ar-btn">ENTER AR MODE</button>
+            <!-- Tombol AR sekarang lebih informatif -->
+            <button class="btn-action" id="ar-btn" style="display:none;">ENTER AR MODE</button>
             <div style="font-size: 10px; text-align: center;">RECORD<br><br><div style="width:20px; height:20px; background: red; border-radius:50%; margin: 0 auto;"></div></div>
         </div>
     </div>
 
-    <canvas id="renderCanvas"></canvas>
+    <!-- Canvas Babylon -->
+    <canvas id="renderCanvas" touch-action="none"></canvas>
+
+    <!-- Layar Inisialisasi -->
+    <div id="startup-screen">
+        <h2>[ KREASIOKA SLS SYSTEM ]</h2>
+        <div id="log-box">Menunggu perintah...</div>
+        <button class="btn-action" id="start-btn" onclick="initializeSystem()">AKTIFKAN SENSOR</button>
+    </div>
 
     <script>
         const canvas = document.getElementById("renderCanvas");
+        const videoElement = document.getElementById("bg-video");
         const logBox = document.getElementById("log-box");
         let engine, scene, xrExperience, ghostMesh, minimapCtx;
         let ghostActive = false;
@@ -107,61 +119,40 @@
             logBox.scrollTop = logBox.scrollHeight;
         }
 
-        // --- SISTEM PERIZINAN (Kamera, GPS, Storage) ---
-        async function requestPermissions() {
-            log("Memeriksa Storage (IndexedDB/Local)...");
-            if (navigator.storage && navigator.storage.persist) {
-                const isPersisted = await navigator.storage.persist();
-                log(`Persistent Storage: ${isPersisted ? "Diizinkan" : "Sesi Sementara"}`);
-            }
-
-            log("Meminta akses GPS...");
+        async function initializeSystem() {
+            document.getElementById("start-btn").disabled = true;
+            log("Meminta Akses GPS...");
+            
             navigator.geolocation.getCurrentPosition(
-                (pos) => {
-                    log("GPS OK.");
-                    document.getElementById("s-gps").innerText = `${pos.coords.latitude.toFixed(2)},${pos.coords.longitude.toFixed(2)}`;
-                },
-                (err) => { log(`GPS Gagal: ${err.message}. Menggunakan simulasi lokal.`); },
+                (pos) => { document.getElementById("s-gps").innerText = `${pos.coords.latitude.toFixed(2)},${pos.coords.longitude.toFixed(2)}`; },
+                (err) => { log(`GPS Info: ${err.message}`); },
                 { enableHighAccuracy: true }
             );
 
-            log("Meminta akses Kamera Utama...");
+            log("Mengaktifkan Kamera (Fallback HTML)...");
             try {
-                // Hanya mengecek izin, rendering akan diambil alih oleh WebXR
+                // Video playsinline dan muted sangat penting agar otomatis memutar di mobile
                 const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-                stream.getTracks().forEach(track => track.stop()); // Matikan stream setelah dapat izin
-                log("Kamera OK.");
-                return true;
+                videoElement.srcObject = stream;
+                log("Kamera Berhasil Aktif!");
             } catch (err) {
-                log(`Kamera Gagal (Wajib HTTPS/Localhost): ${err.message}`);
-                return false;
-            }
-        }
-
-        // --- INISIALISASI UTAMA (HTML/UI) ---
-        async function initializeSystem() {
-            document.getElementById("start-btn").disabled = true;
-            const perms = await requestPermissions();
-            
-            if(!perms && window.location.protocol === 'file:') {
-                alert("Keamanan Browser: Kamera dan AR tidak bisa diakses jika dibuka dari file lokal (file:///). Harap gunakan Local Server (Live Server) atau HTTPS.");
-                // Tetap lanjut untuk menunjukkan interface
+                log(`Kamera Gagal: ${err.message}. Pastikan izin diberikan di pengaturan browser.`);
             }
 
-            setTimeout(initBabylon, 1000);
+            setTimeout(initBabylon, 1500);
         }
 
-        // --- CORE 3D & AR (Babylon.js) ---
         async function initBabylon() {
-            log("Memulai Mesin 3D...");
-            engine = new BABYLON.Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true });
+            log("Memuat Mesin 3D Babylon...");
+            engine = new BABYLON.Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true, alpha: true });
             scene = new BABYLON.Scene(engine);
-            scene.clearColor = new BABYLON.Color4(0, 0, 0, 0); // Transparan untuk AR
+            
+            // KUNCI UTAMA: Membuat background canvas benar-benar transparan agar video HTML di bawahnya terlihat
+            scene.clearColor = new BABYLON.Color4(0, 0, 0, 0); 
 
             const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
-            light.intensity = 0.7;
+            light.intensity = 1.0;
 
-            // Kamera Fallback jika tidak masuk AR
             const camera = new BABYLON.FreeCamera("camera1", new BABYLON.Vector3(0, 1.5, -3), scene);
             camera.setTarget(BABYLON.Vector3.Zero());
 
@@ -171,7 +162,6 @@
             document.getElementById("startup-screen").style.display = "none";
             document.getElementById("ui-layer").style.display = "flex";
 
-            // Loop Render & Efek HUD
             engine.runRenderLoop(() => {
                 scene.render();
                 updateHUD();
@@ -182,9 +172,8 @@
             setupWebXR();
         }
 
-        // --- MEMBUAT HANTU PROSEDURAL (Wireframe Hijau seperti referensi gambar) ---
         function createProceduralGhost() {
-            // Kita merakit humanoid tanpa load file eksternal agar aman dari CORS error saat produksi
+            // Membuat bentuk humanoid
             const body = BABYLON.MeshBuilder.CreateCapsule("body", {height: 1.5, radius: 0.3}, scene);
             const head = BABYLON.MeshBuilder.CreateSphere("head", {diameter: 0.4}, scene);
             head.position.y = 1.0;
@@ -193,110 +182,136 @@
             
             ghostMesh = BABYLON.Mesh.MergeMeshes([body, head, arm], true, true, undefined, false, true);
             
-            // Material SLS Kawat Hijau
             const slsMaterial = new BABYLON.StandardMaterial("slsMat", scene);
-            slsMaterial.emissiveColor = new BABYLON.Color3(0.1, 1, 0.1);
+            slsMaterial.emissiveColor = new BABYLON.Color3(0.0, 1.0, 0.0); // Hijau SLS
             slsMaterial.wireframe = true;
-            slsMaterial.alpha = 0.8;
-            slsMaterial.disableLighting = true; // Menyala dalam gelap
+            slsMaterial.alpha = 0.9;
+            slsMaterial.disableLighting = true; 
             
             ghostMesh.material = slsMaterial;
+            ghostMesh.position = new BABYLON.Vector3(0, 0, 3); // Posisi default di depan kamera
             ghostMesh.isVisible = false;
         }
 
-        // --- SISTEM AR & SMART SPAWNING ---
         async function setupWebXR() {
             try {
+                // Konfigurasi WebXR yang lebih "memaafkan" agar tidak memicu ikon ERROR
                 xrExperience = await scene.createDefaultXRExperienceAsync({
-                    uiOptions: { sessionMode: 'immersive-ar', referenceSpaceType: 'local-floor' }
+                    uiOptions: { 
+                        sessionMode: 'immersive-ar',
+                        referenceSpaceType: 'unbounded' // Lebih kompatibel dari local-floor
+                    },
+                    optionalFeatures: true
                 });
 
-                // Membajak tombol AR kustom kita ke fungsi bawaan Babylon
-                document.getElementById("ar-btn").addEventListener("click", async () => {
-                    await xrExperience.baseExperience.enterXRAsync('immersive-ar', 'local-floor');
-                });
-
-                // Fitur Deteksi Lantai (Plane Detection) & Hit Test
                 const fm = xrExperience.baseExperience.featuresManager;
                 
-                // Smart Spawning: Mencari permukaan lantai
-                const hitTest = fm.enableFeature(BABYLON.WebXRHitTest, 'latest');
-                
+                // Mendaftarkan UI Layer kita agar tetap muncul DI DALAM mode AR WebXR
+                try {
+                    fm.enableFeature(BABYLON.WebXRFeatureName.DOM_OVERLAY, "latest", {
+                        element: "#ui-layer"
+                    });
+                } catch(e) { console.warn("DOM Overlay tidak didukung"); }
+
+                // Hit Test (Opsional, dibungkus try-catch agar tidak crash jika HP tidak mendukung)
+                let hitTest;
+                try {
+                    hitTest = fm.enableFeature(BABYLON.WebXRHitTest, 'latest');
+                } catch(e) { console.warn("Hit Test tidak didukung"); }
+
                 let lastHitTest = null;
-                hitTest.onHitTestResultObservable.add((results) => {
-                    if (results.length > 0) {
-                        lastHitTest = results[0]; // Simpan titik lantai yang valid
+                if (hitTest) {
+                    hitTest.onHitTestResultObservable.add((results) => {
+                        if (results.length > 0) { lastHitTest = results[0]; }
+                    });
+                }
+
+                // Logika Spawning Hantu
+                setInterval(() => {
+                    // Cek apakah sedang dalam mode AR atau mode Fallback HTML
+                    const inXR = xrExperience.baseExperience.state === BABYLON.WebXRState.IN_XR;
+                    spawnGhost(lastHitTest, inXR);
+                }, 6000); // Evaluasi tiap 6 detik
+
+                // Atur visibilitas Video HTML vs Kamera WebXR Native
+                xrExperience.baseExperience.onStateChangedObservable.add((state) => {
+                    if (state === BABYLON.WebXRState.IN_XR) {
+                        videoElement.style.display = 'none'; // Sembunyikan fallback saat AR Core jalan
+                    } else if (state === BABYLON.WebXRState.NOT_IN_XR) {
+                        videoElement.style.display = 'block'; // Munculkan fallback jika keluar AR
                     }
                 });
 
-                // Algoritma Memunculkan Hantu secara periodik
-                setInterval(() => {
-                    if (xrExperience.baseExperience.state === BABYLON.WebXRState.IN_XR) {
-                        spawnSmartGhost(lastHitTest);
-                    }
-                }, 8000); // Tiap 8 detik evaluasi
-
             } catch (e) {
-                console.warn("WebXR tidak didukung. Jalankan di Android Chrome via HTTPS.");
+                console.warn("WebXR Gagal Diinisialisasi. Tetap menggunakan mode Fallback Kamera HTML.", e);
+                // Jika WebXR gagal total, kita tetap jalankan fungsi spawnGhost dengan sistem fallback
+                setInterval(() => { spawnGhost(null, false); }, 6000);
             }
         }
 
-        function spawnSmartGhost(hitTestResult) {
-            if (!ghostMesh) return;
+        function spawnGhost(hitTestResult, inXR) {
+            if (!ghostMesh || ghostActive) return;
             
-            if (hitTestResult && !ghostActive) {
-                // Spawning Pintar: Tempatkan persis di lantai fisik yang terdeteksi
-                hitTestResult.transformationMatrix.decompose(undefined, undefined, ghostMesh.position);
-                ghostMesh.position.y += 0.8; // Angkat sedikit dari lantai
-                
-                ghostMesh.isVisible = true;
+            // Logika kemunculan acak (30% kemungkinan muncul tiap dievaluasi)
+            if (Math.random() > 0.7) {
                 ghostActive = true;
-                document.getElementById("alert-text").style.display = "block"; // Munculkan teks "What is that ???"
+                ghostMesh.isVisible = true;
+                document.getElementById("alert-text").style.display = "block";
 
-                // Hadapkan ke pemain (kamera)
-                ghostMesh.lookAt(xrExperience.baseExperience.camera.position);
+                if (inXR && hitTestResult) {
+                    // Mode AR Canggih: Taruh di lantai/permukaan
+                    hitTestResult.transformationMatrix.decompose(undefined, undefined, ghostMesh.position);
+                    ghostMesh.position.y += 0.8; 
+                    ghostMesh.lookAt(xrExperience.baseExperience.camera.position);
+                } else {
+                    // Mode Fallback (Kamera HTML): Taruh melayang acak di depan kamera
+                    let rx = (Math.random() - 0.5) * 4;
+                    let rz = 3 + Math.random() * 4; // Jarak 3-7 meter di depan
+                    ghostMesh.position = new BABYLON.Vector3(rx, 0, rz);
+                }
 
-                // Hilangkan setelah beberapa detik (efek roh)
+                // Hantu hilang setelah 3.5 detik
                 setTimeout(() => {
                     ghostMesh.isVisible = false;
                     ghostActive = false;
                     document.getElementById("alert-text").style.display = "none";
-                }, 4000);
+                }, 3500);
             }
         }
 
-        // --- MINIMAP LOKAL & HUD ---
         function setupMinimap() {
             const mmCanvas = document.getElementById("minimap");
-            mmCanvas.width = 100; mmCanvas.height = 100;
+            mmCanvas.width = 80; mmCanvas.height = 80;
             minimapCtx = mmCanvas.getContext("2d");
         }
 
         function updateMinimap() {
             if (!minimapCtx) return;
-            minimapCtx.clearRect(0, 0, 100, 100);
+            minimapCtx.clearRect(0, 0, 80, 80);
             
-            // Gambar posisi kamera (Tengah)
+            // Titik Pusat (Kamera)
             minimapCtx.fillStyle = "#fff";
             minimapCtx.beginPath();
-            minimapCtx.arc(50, 50, 3, 0, Math.PI * 2);
+            minimapCtx.arc(40, 40, 3, 0, Math.PI * 2);
             minimapCtx.fill();
 
-            // Jika hantu aktif, gambar di minimap relatif terhadap kamera
-            if (ghostActive && ghostMesh && xrExperience && xrExperience.baseExperience.camera) {
-                const camPos = xrExperience.baseExperience.camera.position;
-                const relX = (ghostMesh.position.x - camPos.x) * 10; // Skala jarak
-                const relZ = (ghostMesh.position.z - camPos.z) * 10;
+            // Titik Hantu
+            if (ghostActive && ghostMesh) {
+                let camPos = {x: 0, z: 0};
+                if (xrExperience && xrExperience.baseExperience.state === BABYLON.WebXRState.IN_XR) {
+                    camPos = xrExperience.baseExperience.camera.position;
+                }
+                const relX = (ghostMesh.position.x - camPos.x) * 8;
+                const relZ = (ghostMesh.position.z - camPos.z) * 8;
                 
                 minimapCtx.fillStyle = "#0f0";
                 minimapCtx.beginPath();
-                minimapCtx.arc(50 + relX, 50 - relZ, 4, 0, Math.PI * 2);
+                minimapCtx.arc(40 + relX, 40 - relZ, 4, 0, Math.PI * 2);
                 minimapCtx.fill();
             }
         }
 
         function updateHUD() {
-            // Simulasi angka yang berubah-ubah di atas layar (efek ala alat paranormal)
             if (Math.random() > 0.8) {
                 document.getElementById("s-illc").innerText = Math.floor(Math.random() * 300).toString().padStart(4, '0');
                 document.getElementById("s-expc").innerText = (Math.random() * 0.1).toFixed(3);
